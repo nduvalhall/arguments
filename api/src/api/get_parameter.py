@@ -49,6 +49,15 @@ async def parameters(target: str) -> list[str]:
         return []
 
 
+from pydantic import BaseModel
+
+
+class Request(BaseModel):
+    target: str
+    parameter: str
+    timeout: int
+
+
 @router.post("")
-async def get_parameter(target: str, parameter: str, timeout: int) -> str:
-    return f"{target}.{parameter}"
+async def get_parameter(request: Request) -> str:
+    return f"{request.target}.{request.parameter}"
