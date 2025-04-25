@@ -14,6 +14,7 @@ async def schema():
                 "lookup": {
                     "url": "/get-parameter/targets",
                 },
+                "default": "",
             },
             {
                 "argument": "parameter",
@@ -22,6 +23,12 @@ async def schema():
                     "url": "/get-parameter/parameters",
                     "dependencies": ["target"],
                 },
+                "default": "",
+            },
+            {
+                "argument": "timeout",
+                "type": "number",
+                "default": 30,
             },
         ],
     }
@@ -43,5 +50,5 @@ async def parameters(target: str) -> list[str]:
 
 
 @router.post("")
-async def get_parameter(target: str, parameter: str) -> str:
+async def get_parameter(target: str, parameter: str, timeout: int) -> str:
     return f"{target}.{parameter}"
