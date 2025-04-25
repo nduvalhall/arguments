@@ -139,9 +139,21 @@ const onDependencyChange = (changedArg: string) => {
     }
 };
 
-const submit = () => {
-    console.log("Submitted arguments:", form);
-    // Here you can call the execute endpoint if needed
+const submit = async () => {
+    const response = await fetch(BASE_URL + "/" + schema.activity, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(form),
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log("Execution result:", result);
 };
 
 onMounted(async () => {
