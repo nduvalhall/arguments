@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/get-parameter", tags=["get-parameter"])
 
@@ -49,15 +50,17 @@ async def parameters(target: str) -> list[str]:
         return []
 
 
-from pydantic import BaseModel
-
-
 class Request(BaseModel):
     target: str
     parameter: str
     timeout: int
 
 
+class Response(BaseModel):
+    value: list[int | float | str]
+    kind: str
+
+
 @router.post("")
-async def get_parameter(request: Request) -> str:
-    return f"{request.target}.{request.parameter}"
+async def get_parameter(request: Request) -> Response:
+    return Response(value=[f"{request.target}.{request.parameter}"], kind="list[str]")
