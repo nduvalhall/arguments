@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
-from . import get_parameter
+from . import get_parameter, set_parameter
 
 app = FastAPI(title="API", description="API service", version="0.1.0")
 
@@ -16,6 +16,7 @@ app.add_middleware(
 )
 
 app.include_router(get_parameter.router)
+app.include_router(set_parameter.router)
 
 
 @app.get("/")

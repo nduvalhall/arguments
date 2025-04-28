@@ -1,205 +1,233 @@
 <template>
-    <div class="form-container">
-        <div
-            v-for="arg in schema.arguments"
-            :key="arg.argument"
-            class="form-group"
-        >
-            <label :for="arg.argument" class="form-label">
-                {{ arg.argument }}
-            </label>
-            <template v-if="arg.type === 'list'">
-                <select
-                    v-model="form[arg.argument]"
-                    :id="arg.argument"
-                    @change="onDependencyChange(arg.argument)"
-                    class="form-input"
-                >
-                    <option value="" disabled>Select {{ arg.argument }}</option>
-                    <option
-                        v-for="option in options[arg.argument]"
-                        :key="option.value"
-                        :value="option.value"
-                    >
-                        {{ option.label }}
-                    </option>
-                </select>
-            </template>
-            <template v-else-if="arg.type === 'number'">
-                <input
-                    type="number"
-                    v-model.number="form[arg.argument]"
-                    :id="arg.argument"
-                    class="form-input"
-                />
-            </template>
+    <div class="container">
+        <div class="activity-tabs">
+            <button
+                @click="currentView = 'forms'"
+                :class="{ active: currentView === 'forms' }"
+                class="tab-button"
+            >
+                Forms
+            </button>
+            <button
+                @click="currentView = 'table'"
+                :class="{ active: currentView === 'table' }"
+                class="tab-button"
+            >
+                Activity Table
+            </button>
         </div>
 
-        <button @click="submit" class="submit-button">Execute</button>
+        <div v-if="currentView === 'forms'">
+            <div class="activity-tabs">
+                <button
+                    @click="currentActivity = 'set-parameter'"
+                    :class="{ active: currentActivity === 'set-parameter' }"
+                    class="tab-button"
+                >
+                    Set Parameter
+                </button>
+                <button
+                    @click="currentActivity = 'get-parameter'"
+                    :class="{ active: currentActivity === 'get-parameter' }"
+                    class="tab-button"
+                >
+                    Get Parameter
+                </button>
+            </div>
+
+            <DynamicForm
+                :schema="
+                    currentActivity === 'set-parameter'
+                        ? setParameterSchema
+                        : getParameterSchema
+                "
+                submitButtonText="Execute"
+                @submit="handleFormSubmit"
+            />
+        </div>
+
+        <div v-else-if="currentView === 'table'">
+            <ActivityTable @save="handleActivitiesSave" />
+        </div>
     </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, onMounted } from "vue";
+import { ref } from "vue";
+import DynamicForm from "./components/DynamicForm.vue";
+import ActivityTable from "./components/ActivityTable.vue";
+import type { Schema } from "./types/schema";
 
-const BASE_URL = "http://localhost:8000";
+const currentView = ref("forms");
+const currentActivity = ref("set-parameter");
 
-interface Lookup {
-    url: string;
-    dependencies?: string[];
-}
-
-interface ArgumentSchema {
-    argument: string;
-    type: "list" | "number";
-    lookup?: Lookup;
-    default: string | number;
-}
-
-interface Schema {
-    activity: string;
-    arguments: ArgumentSchema[];
-}
-
-interface Option {
-    label: string;
-    value: string;
-}
-
-const schema: Schema = {
-    activity: "get-parameter",
+const setParameterSchema: Schema = {
+    activity: "set-parameter",
+    title: "Set Parameter",
+    description: "Configure and set a parameter for the selected target",
+    endpoint: "POST /set-parameter",
     arguments: [
         {
-            argument: "target",
+            name: "target",
+            label: "Target",
             type: "list",
-            lookup: {
-                url: "/get-parameter/targets",
+            dataSource: {
+                type: "remote",
+                url: "GET /set-parameter/targets",
             },
             default: "",
+            required: true,
         },
         {
-            argument: "parameter",
+            name: "parameter",
+            label: "Parameter",
             type: "list",
-            lookup: {
-                url: "/get-parameter/parameters",
+            dataSource: {
+                type: "remote",
+                url: "GET /set-parameter/parameters",
                 dependencies: ["target"],
             },
             default: "",
+            required: true,
         },
         {
-            argument: "timeout",
+            name: "value",
+            label: "Value",
+            type: "string",
+            validation: [
+                {
+                    type: "required",
+                    message: "Value is required",
+                },
+                {
+                    type: "remote",
+                    url: "POST /set-parameter/validate-value",
+                    dependencies: ["target", "parameter", "value"],
+                },
+            ],
+            default: "",
+        },
+        {
+            name: "timeout",
+            label: "Timeout (seconds)",
             type: "number",
             default: 30,
+            required: false,
+            validation: [
+                {
+                    type: "min",
+                    value: 1,
+                    message: "Timeout must be at least 1 second",
+                },
+                {
+                    type: "max",
+                    value: 300,
+                    message: "Timeout cannot exceed 300 seconds",
+                },
+            ],
         },
     ],
 };
 
-const form = reactive<Record<string, any>>({});
-const options = reactive<Record<string, Option[]>>({});
-
-const loadOptions = async (arg: ArgumentSchema) => {
-    const lookup = arg.lookup;
-    if (!lookup) return;
-
-    let url = BASE_URL + lookup.url;
-
-    if (lookup.dependencies) {
-        const params = new URLSearchParams();
-        for (const dep of lookup.dependencies) {
-            if (form[dep]) {
-                params.append(dep, form[dep]);
-            }
-        }
-        url += `?${params.toString()}`;
-    }
-
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const res = await response.json();
-        options[arg.argument] = res.map((value: any) => ({
-            label: value,
-            value,
-        }));
-    } catch (error) {
-        console.error(`Failed loading options for ${arg.argument}`, error);
-        options[arg.argument] = [];
-    }
-};
-
-const onDependencyChange = (changedArg: string) => {
-    for (const arg of schema.arguments) {
-        if (arg.lookup?.dependencies?.includes(changedArg)) {
-            form[arg.argument] = "";
-            loadOptions(arg);
-        }
-    }
-};
-
-const submit = async () => {
-    const response = await fetch(BASE_URL + "/" + schema.activity, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
+const getParameterSchema: Schema = {
+    activity: "get-parameter",
+    title: "Get Parameter",
+    description: "Retrieve a parameter value from the selected target",
+    endpoint: "POST /get-parameter",
+    arguments: [
+        {
+            name: "target",
+            label: "Target",
+            type: "list",
+            dataSource: {
+                type: "remote",
+                url: "GET /get-parameter/targets",
+            },
+            default: "",
+            required: true,
         },
-        body: JSON.stringify(form),
-    });
+        {
+            name: "parameter",
+            label: "Parameter",
+            type: "list",
+            dataSource: {
+                type: "remote",
+                url: "GET /get-parameter/parameters",
+                dependencies: ["target"],
+            },
+            default: "",
+            required: true,
+        },
+        {
+            name: "timeout",
+            label: "Timeout (seconds)",
+            type: "number",
+            default: 30,
+            required: false,
+            validation: [
+                {
+                    type: "min",
+                    value: 1,
+                    message: "Timeout must be at least 1 second",
+                },
+                {
+                    type: "max",
+                    value: 300,
+                    message: "Timeout cannot exceed 300 seconds",
+                },
+            ],
+        },
+    ],
+};
 
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
+const handleFormSubmit = (formData: Record<string, any>, result: any) => {
+    console.log(`${currentActivity.value} submitted:`, formData);
     console.log("Execution result:", result);
 };
 
-onMounted(async () => {
-    for (const arg of schema.arguments) {
-        form[arg.argument] = arg.default;
-        if (arg.type === "list" && !arg.lookup?.dependencies) {
-            await loadOptions(arg);
-        }
-    }
-});
+const handleActivitiesSave = (activities: any[]) => {
+    console.log("Activities saved:", activities);
+    // Here you could convert the activities to schema format
+    // or send them to a server, etc.
+};
 </script>
 
 <style>
-.form-container {
-    padding: 1rem;
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+        Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.activity-tabs {
     display: flex;
-    flex-direction: column;
-    gap: 1rem;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #e5e7eb;
 }
 
-.form-group {
-    display: flex;
-    flex-direction: column;
-}
-
-.form-label {
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-}
-
-.form-input {
-    padding: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 0.25rem;
-}
-
-.submit-button {
-    padding: 0.5rem 1rem;
-    background-color: #3b82f6;
-    color: white;
+.tab-button {
+    padding: 10px 20px;
     border: none;
-    border-radius: 0.25rem;
+    background-color: transparent;
+    font-size: 16px;
+    font-weight: 500;
     cursor: pointer;
+    transition: all 0.2s;
 }
 
-.submit-button:hover {
-    background-color: #2563eb;
+.tab-button:hover {
+    background-color: #f9fafb;
+}
+
+.tab-button.active {
+    color: #3b82f6;
+    border-bottom: 2px solid #3b82f6;
 }
 </style>
